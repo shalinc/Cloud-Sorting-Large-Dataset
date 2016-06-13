@@ -1,0 +1,629 @@
+/*
+	SHARED MEMORY SORT CODE
+*/
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SharedMemoryTeraSort 
+{
+
+	private static int threadCount;
+	private static int noOfChunks = 80;
+	private static List <String> fileList = new ArrayList<String>();
+	private static long totalLines;
+
+	public static void main(String[] args) throws Exception 
+	{
+		// TODO Auto-generated method stub
+		threadCount = Integer.parseInt(args[0]);
+		System.out.println("Running Threads: "+threadCount);
+		String filepath = "InputFile.txt";
+		
+		//final List <String> copyFileData = new ArrayList<String>();
+		double startTime = System.currentTimeMillis();
+
+		createFileList();
+		final List<Integer> fileIndexes = new ArrayList<Integer>();
+		
+		for(int i=0;i<noOfChunks;i++)
+			fileIndexes.add(i);
+	
+		File file = new File(filepath);
+		totalLines = file.length();
+		
+		file.delete();
+		
+		//Threads
+		Thread [] thread = new Thread[threadCount];
+		
+		for (int i= 0 ;i <threadCount; i++)
+		{
+			
+			thread[i] = new Thread(new Runnable()
+			{	
+				@Override
+				public void run()
+				{
+					try
+					{
+						for(int i=0;i<noOfChunks/threadCount;i++)
+						{
+							
+							int fileIndex = ((Integer.parseInt(Thread.currentThread().getName())*noOfChunks)/(threadCount))+i;
+							implementSorting(fileIndexes.get(fileIndex));
+						}
+					}
+					catch(Exception e)
+					{
+					}
+				}
+			});
+			
+			thread[i].setName(Integer.toString(i));
+			thread[i].start();
+		}
+	
+		//wait for all the threads to finish, before starting merge phase
+		for(int j =0;j<threadCount;j++)
+		{
+			thread[j].join();
+		}
+		
+		System.out.println("Sorted Chunks Created, Final Merge Phase Starts");
+		
+		mergeSortedChunks();
+
+		System.out.println("Time Taken in millis: "+(System.currentTimeMillis()-startTime));
+	}
+
+	private static void implementSorting(int index) throws Exception
+	{
+		//System.out.println("Thread: -->"+Thread.currentThread().getName());
+		//System.out.println("Index:--->"+index);
+		
+		List<String> retList = null;
+		
+		retList = readDataFile(fileList.get(index));
+		retList = QuickSort(retList,0,retList.size()-1);
+		writeSortedFile(retList,index);
+		retList.clear();
+		
+	}
+	
+	//Do k-way external Mergesort to merge all the sorted chunks into one big file
+	private static void mergeSortedChunks() throws IOException 
+	{
+		// TODO Auto-generated method stub
+		
+		BufferedReader[] bufReaderArray = new BufferedReader[noOfChunks];
+		List <String> mergeList = new ArrayList<String>();
+		List <String> keyValueList = new ArrayList<String>();
+		
+		
+		//Copy first line from all the chunks and find minimum value among these chunks
+		for (int i=0; i<noOfChunks; i++)
+		{
+			bufReaderArray[i] = new BufferedReader(new FileReader(fileList.get(i)));
+
+			String fileLine = bufReaderArray[i].readLine();
+
+			if(fileLine != null)
+			{
+				mergeList.add(fileLine.substring(0, 10));
+				keyValueList.add(fileLine);
+			}
+		}
+
+		//Final Output File
+		BufferedWriter bufw = new BufferedWriter(new FileWriter("MergedOutput.txt"));
+
+		//Merge & Sort the files
+
+		for(long j=0; j<totalLines;j++)
+		{
+			String minString = mergeList.get(0);
+			int minFile = 0;
+
+			for (int k = 0; k< noOfChunks; k++)
+			{
+				if (minString.compareTo(mergeList.get(k)) > 0)
+				{
+					minString = mergeList.get(k);
+					minFile = k;
+				}
+			}
+
+			//System.out.println("Minimum file is: "+minFile);
+			bufw.write(keyValueList.get(minFile)+"\n");
+			mergeList.set(minFile,"-1");
+			keyValueList.set(minFile,"-1");
+
+			String temp = bufReaderArray[minFile].readLine();
+
+			if (temp != null)
+			{
+				mergeList.set(minFile,temp.substring(0, 10));
+				keyValueList.set(minFile, temp);
+			}
+			else
+			{
+				//if one of the files get finished earlier than others, copy other values and Quick Sort over them
+				//write the output to the final sorted file
+				j = totalLines;
+
+				List <String> tempList = new ArrayList<String>();
+
+				for(int i = 0;i< mergeList.size();i++)
+				{
+					if(keyValueList.get(i)!="-1")
+						tempList.add(keyValueList.get(i));
+
+					while((minString = bufReaderArray[i].readLine())!=null)
+					{
+						tempList.add(minString);
+					}
+				}
+
+				tempList = QuickSort(tempList, 0, tempList.size()-1);
+				int i =0;
+				while(i < tempList.size())
+				{
+					bufw.write(tempList.get(i)+"\n");
+					i++;
+				}
+				
+				//System.out.println("Time taken for last phase when file read finished: "+(System.currentTimeMillis()-startTime));
+			}
+		}
+		bufw.close();
+		//System.out.println("Copied values are: "+copiedValue);
+		for(int i=0; i<noOfChunks;i++)
+			bufReaderArray[i].close();	
+	}
+
+	//Method to create a FileList, which will include name of the file chunks to fetch
+	private static void createFileList() 
+	{
+		for(int i = 0; i<noOfChunks; i++)
+			fileList.add("chunk-"+String.format("%02d", i)+".txt");
+		//System.out.println("The file List is: "+fileList);
+	}
+
+	//Read the File Path to read the File to sort
+	static List<String> readDataFile(String filePath)throws Exception
+	{
+		List <String> dataToSort = new ArrayList <String> ();
+		
+		//File Reader to get the file to be read
+		FileReader file = new FileReader(new File(filePath));
+		//Using Buffered Reader to read the file
+		BufferedReader bufRead = new BufferedReader(file);
+		//Storing the File Content in an ArrayList
+
+		//String readLine = null;
+		dataToSort.clear();
+		//int i=0;
+		//Read the entire file while it is not NULL i.e. Reaches end of File
+		
+		String readline;
+		
+		while(true)
+		{
+			readline = null;
+
+			if((readline = bufRead.readLine()) == null)
+				break;
+			
+			dataToSort.add(readline);
+		}
+		/*
+		while ((readLine = bufRead.readLine()) != null)
+		{
+			dataToSort.add(readLine);
+			//System.out.println(i++);
+		}*/
+
+		bufRead.close();
+
+		return dataToSort;	
+	}
+
+	//Quick Sort to Sort Files
+	static List<String> QuickSort(List<String> dataToSort, int beginIndex, int endIndex) throws IOException
+	{
+		//Get the Lower Index and Higher Index
+		int i = beginIndex;
+		int j = endIndex;
+
+		//Middle element Index is taken as the Pivot Index
+		int pivotIndex = beginIndex + (endIndex-beginIndex)/2; 
+
+		//Middle element becomes the pivot
+		String pivot = dataToSort.get(pivotIndex).substring(0, 10);
+
+		//For Swapping purpose
+		//String temp = null;
+
+		//Until i and j converge do
+		while(i <= j)
+		{
+			String temp = null;
+			//Check if elements in left side of pivot are less, if yes increment i
+			while(dataToSort.get(i).substring(0, 10).compareTo(pivot) < 0)
+				i++;
+
+			//Check if elements to right of the pivot is greater than pivot, 
+			//if yes decrement j as it is at last index
+			while(dataToSort.get(j).substring(0, 10).compareTo(pivot) > 0)
+				j--;
+
+			//Found two elements Indexe's to Swap
+			if(i<=j)
+			{
+				//Swap the elements
+				temp = dataToSort.get(i);
+				dataToSort.set(i, dataToSort.get(j));
+				dataToSort.set(j,temp);
+
+				//Increment i and decrement j
+				i++;
+				j--;
+			}
+		}
+
+		//Recursive Call to Quick sort, using Divide and Conquer Approach
+
+		//Sort left sub-ArrayList
+		if (beginIndex < j)
+			QuickSort(dataToSort,beginIndex, j);
+
+		//Sort Right sub-ArrayList
+		if (i < endIndex)
+			QuickSort(dataToSort,i, endIndex);
+
+		return dataToSort;
+	}
+
+	
+	//Write Final Sorted Result in file
+	static void writeSortedFile(List<String> dataToSort, int fileIndex) throws IOException, InterruptedException
+	{
+		//System.out.println("Thread "+Thread.currentThread().getName()+"-->"+fileList.get(fileIndex));
+		
+		//Write the result in an Output File
+		FileWriter filewrite = new FileWriter(new File(fileList.get(fileIndex)));
+		BufferedWriter bufw = new BufferedWriter(filewrite);
+
+		//FileInputStream fis = new FileInputStream(new File(fileList.get(fileIndex)));
+		
+		int k = 0;
+		
+		while(k !=dataToSort.size()) 
+		{
+			bufw.write(dataToSort.get(k)+" "+"\n");
+			k++;	
+		}
+		
+		//filewrite.close();
+		bufw.close();
+	}
+}
+
+
+/*
+	HADOOP SORT CODE
+*/
+
+
+import java.io.IOException;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.conf.*;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.FileInputFormat;
+import org.apache.hadoop.mapred.FileOutputFormat;
+import org.apache.hadoop.mapred.JobClient;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.MapReduceBase;
+import org.apache.hadoop.mapred.Mapper;
+import org.apache.hadoop.mapred.OutputCollector;
+import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapred.lib.IdentityReducer;
+import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
+
+
+/*
+ * HADOOP TERA SORT IN JAVA
+ * 
+ * MAP PHASE: Gives data to mapper's to sort on KEY and Value 
+ * REDUCE PHASE: Output's the sorted Data obtained from Sort & Shuffle Phase
+ * 
+ */
+public class HadoopTeraSort extends Configured implements Tool
+{
+	public int run(String[] args) throws Exception
+	{
+		//Check if Args are correctly specified or Not
+		
+		if(args.length!=2)
+		{
+			System.out.println("USAGE: hadoop jar <JAR_FILE> <HDFS INPUT FILE PATH> <OUTPUT DIRECTORY PATH>");
+			return -1;
+		}
+
+
+		//Job Configuration
+		JobConf config = new JobConf(HadoopTeraSort.class);
+		
+		//Set the JobName as class name or can be set as any name as per user
+		config.setJobName(this.getClass().getName());
+
+		//Configure the File Paths Input and Output
+		FileInputFormat.setInputPaths(config, new Path(args[0]));
+		FileOutputFormat.setOutputPath(config, new Path(args[1]));
+
+		//Configure the Mappers & Reducers Input data class
+		config.setMapperClass(MapperSorting.class);
+		config.setMapOutputKeyClass(Text.class);
+		config.setOutputKeyClass(Text.class);
+		
+		//Configure the Output data Class
+		config.setReducerClass(IdentityReducer.class);
+		config.setMapOutputValueClass(Text.class);
+		config.setOutputValueClass(NullWritable.class);
+		
+		//Set the Number of Reduce Tasks
+		config.setNumReduceTasks(4);
+		
+		//Set the Number of Map Tasks
+		config.setNumMapTasks(4);
+		
+		//Run the Job on HADOOP
+		JobClient.runJob(config);
+		return 0;
+	}
+
+	//ToolRunner Load
+	public static void main(String[] args) throws Exception 
+	{
+		//ToolRunner to Run the Hadoop Code
+		int exitCode = ToolRunner.run(new HadoopTeraSort(), args);
+		System.exit(exitCode);
+	}
+
+	//Mapper Class extending MapReduce Class implementation
+	public static class MapperSorting extends MapReduceBase implements Mapper<LongWritable, Text, Text, Text>
+	{
+		public MapperSorting() {
+			// TODO Auto-generated constructor stub
+		}
+		
+		//Map Job, Key 10 bytes, Value 90 Bytes output to reducer
+		public void map(LongWritable Key, Text Value, OutputCollector<Text, Text> output, Reporter rep) throws IOException
+		{
+			//Convert to String and split the data
+			String fileLine = Value.toString();
+			
+			//fetch from data Key and Value
+			String fileKey = fileLine.substring(0, 10);
+			String fileValue = fileLine.substring(10,98);
+			
+			//give as the output to next phase
+			output.collect(new Text(fileKey), new Text(fileValue));
+		}
+	}
+
+}
+
+
+/*
+	Python Code for SPARK SORT
+*/
+from pyspark import SparkConf, SparkContext
+import sys
+
+#Set the Application Name
+appName = "SparkSort"
+
+#set SparkConf Configuration
+conf = SparkConf().setAppName(appName)
+sc = SparkContext(conf=conf)
+
+#Give path of HDFS where Input file is present
+inputFile = sc.textFile(sys.argv[0])
+
+sortedOp = inputFile.flatMap(lambda line: line.split("\n"))\
+    .map(lambda line: (line[:10], line[10:98]))\
+    .sortByKey()\
+    .map(lambda key, value: key+value+" ")
+
+#Name of the Output Directory to Store the sorted chunks
+sortedOp.saveAsTextFile(sys.argv[1])
+
+
+/*
+	Scala Shell Code for SPARK SORT
+	This code is written directly over the spark-shell
+*/
+
+val inputFilePath = textFile.("/Input")
+val sortedOp = inputFilePath.flatMap(line => line.split("\n"))
+				.map(line => (line.substring(0,10), line.substring(10,98)))
+				.sortByKey()
+				.map{case(key, value) => key + value+ " "}
+sortedOp.saveAsTextFile("/Output")
+
+
+/*****SCRIPTS******/
+
+
+/*
+	SHARED MEMORY SCRIPTS
+*/
+
+/*1GB*/
+
+#!/bin/sh
+
+echo 'Generating Un-Sorted file of 1GB'
+time ./gensort -a 10000000 InputFile.txt
+echo 'Creating file Chunks'
+time split -n 80 -d --additional-suffix=.txt InputFile.txt chunk- 
+echo 'File Chunks Created generated'
+javac *.java
+echo 'STARTING SORT'
+time java -Xmx2048m SharedMemoryTeraSort 1
+echo 'FINISHED SORTING'
+
+echo 'Checking Sorted File using Valsort'
+time ./valsort MergedOutput.txt
+echo 'Deleting Temporary Chunks'
+rm chunk*
+
+
+/*10GB*/
+
+#!/bin/sh
+
+echo 'Generating Un-Sorted file of 10GB'
+time ./gensort -a 100000000 InputFile.txt
+echo 'Creating file Chunks'
+time split -n 80 -d --additional-suffix=.txt InputFile.txt chunk- 
+echo 'File Chunks Created'
+javac *.java
+echo 'STARTING SORT'
+time java -Xms3200m SharedMemoryTeraSort 1
+echo 'FINISHED SORTING'
+
+echo 'Checking Sorted File using Valsort'
+time ./valsort MergedOutput.txt
+
+echo 'Deleting Temporary Chunks'
+rm chunk*
+
+
+/*
+	Python Script to Change the Configuration file in Hadoop
+*/
+
+import boto.ec2
+from pyspark import SparkContext
+
+AWS_ACCESS_KEY_ID = #ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY = #SECRET_KEY
+
+#print (boto.ec2.get_regions())
+region1 = boto.ec2.get_region('us-east-1')
+
+#print(region1)
+conn = boto.ec2.EC2Connection(AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY, region=region1)
+
+#get all instances
+reser = conn.get_all_instances()
+instances = [i for r in reser for i in r.instances]
+for i in instances:
+    ip = i.__dict__['dns_name']
+    print(ip)
+    break # <!!!! COMMENT THIS TO GET ALL THE INSTANCES DNS NAME !!!!> 
+
+#SCRIPT 2
+
+#!/usr/bin/env python
+
+import ConnectToEC2
+
+#hadoop-env.sh
+readData = open("hadoop-env.sh").read()
+hdp_env = '''export JAVA_HOME="/usr/lib/jvm/java-7-openjdk-amd64" '''
+updated = readData.replace('export JAVA_HOME=${JAVA_HOME}')
+fd = open('hadoop-env.sh','w')
+fd.write(updated)
+
+#core-site.xml
+readData = open("core-site.xml").read()
+hdp_coresite = '''        <property>
+                <name>fs.default.name</name>
+                <value>hdfs://'''+ConnectToEC2.ip+''':8020</value>
+        </property>
+		<property>
+		    <name>hadoop.tmp.dir</name>
+		    <value>/mnt/raid/</value>
+        </property>
+</configuration>
+'''
+updated = readData.replace('</configuration>',hdp_coresite)
+fd = open('core-site.xml','w')
+fd.write(updated)
+
+#yarn-site.xml
+readData = open("yarn-site.xml").read();
+hdp_yarnsite = '''          <property>
+                <name>yarn.nodemanager.aux-services</name>
+                <value>mapreduce_shuffle</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.scheduler.address</name>
+                <value>'''+ConnectToEC2.ip+''':8030</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.address</name>
+                <value>'''+ConnectToEC2.ip+''':8032</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.webapp.address</name>
+                <value>'''+ConnectToEC2.ip+''':8088</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.resource-tracker.address</name>
+                <value>'''+ConnectToEC2.ip+''':8031</value>
+        </property>
+        <property>
+                <name>yarn.resourcemanager.admin.address</name>
+                <value>'''+ConnectToEC2.ip+''':8033</value>
+        </property>
+</configuration>
+'''
+updated = readData.replace('</configuration>',hdp_yarnsite)
+fd = open('yarn-site.xml','w')
+fd.write(updated)
+
+#mapred-site.xml
+readData = open("mapred-site.xml").read();
+hdp_mapred_site = '''       <property>
+        <name>mapreduce.jobtracker.address</name>
+        <value>'''+ConnectToEC2.ip+''':8021</value>
+</property>
+<property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+</property>
+</configuration>'''
+
+updated = readData.replace('</configuration>',hdp_mapred_site)
+fd = open('mapred-site.xml','w')
+fd.write(updated)
+
+#hdfs-site.xml
+readData = open('hdfs-site.xml').read();
+hdp_hdfs_site = '''        <property>
+                <name>dfs.replication</name>
+                <value>1</value>
+        </property>
+        <property>
+                <name>dfs.permissions</name>
+                <value>false</value>
+        </property>
+</configuration>'''
+updated = readData.replace('</configuration>',hdp_hdfs_site)
+fd = open('hdfs-site.xml','w')
+fd.write(updated)
+
