@@ -1,8 +1,8 @@
 import boto.ec2
 from pyspark import SparkContext
 
-AWS_ACCESS_KEY_ID = 'AKIAIQ4SFJJ5IVIJQ6RA'#'AKIAINPIOQ3LBPI3YOUQ'
-AWS_SECRET_ACCESS_KEY = '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'#'OiNblL4idyhpD7Cea0wkhBCHJG9ERj2w9Nqw05+y'
+AWS_ACCESS_KEY_ID = #Access Key Here
+AWS_SECRET_ACCESS_KEY = #Key Here
 
 #print (boto.ec2.get_regions())
 region1 = boto.ec2.get_region('us-east-1')
