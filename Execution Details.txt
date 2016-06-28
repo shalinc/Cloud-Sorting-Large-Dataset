@@ -1,5 +1,3 @@
-README.TXT
-
 FOLDER STRUCTURE:
 
 Code -> Code contains all the code & Scripts
